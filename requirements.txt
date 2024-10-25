@@ -2,7 +2,7 @@ streamlit
 yfinance
 pandas
 numpy
-talib
+ta-lib
 statsmodels
 plotly
 scikit-learn
