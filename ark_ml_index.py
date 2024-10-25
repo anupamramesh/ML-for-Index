@@ -2,7 +2,7 @@ import yfinance as yf
 from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
-import pandas_ta as ta
+import talib as ta
 from statsmodels.tsa.stattools import adfuller
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
