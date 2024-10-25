@@ -7,3 +7,4 @@ statsmodels
 plotly
 scikit-learn
 setuptools
+numpy<2.0
