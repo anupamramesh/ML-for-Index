@@ -6,3 +6,4 @@ pandas-ta
 statsmodels
 plotly
 scikit-learn
+setuptools
