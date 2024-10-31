@@ -14,22 +14,17 @@ import matplotlib.pyplot as plt
 # Set Streamlit page configuration
 st.set_page_config(layout="wide")
 
+def stationary(series):
+    result = adfuller(series.dropna())  # Drop NaNs for the test
+    return 'stationary' if result[1] < 0.05 else 'not stationary'
+
 # Title for the Streamlit app
 st.title("Random Forest ML model for Index Prediction")
-
-# Dropdown menu for ticker selection
-ticker_options = {
-    "NIFTY": "^NSEI",
-    "BANKNIFTY": "^NSEBANK",
-    "FINNIFTY": "^NSEFIN",
-    "MIDCTNIFTY": "^NSEMID"
-}
-selected_ticker = st.selectbox("Select Ticker:", list(ticker_options.keys()))
-ticker = ticker_options[selected_ticker]
 
 # Data fetching and preprocessing
 end_date = datetime.now()
 start_date = end_date - timedelta(days=1*365)
+ticker = "^NSEI"
 
 stock = yf.Ticker(ticker)
 historical_data = stock.history(start=start_date.strftime("%Y-%m-%d"), end=end_date.strftime("%Y-%m-%d"), interval='1d')
@@ -47,11 +42,6 @@ historical_data['volatility'] = historical_data['pct_change'].rolling(14).std() 
 # Clean data
 historical_data.fillna(method='ffill', inplace=True)
 historical_data.dropna(inplace=True)
-
-# Define stationary function for feature engineering
-def stationary(series):
-    result = adfuller(series.dropna())  # Drop NaNs for the test
-    return 'stationary' if result[1] < 0.05 else 'not stationary'
 
 # Prepare features
 y = historical_data[['signal']].copy()
@@ -205,4 +195,3 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-6
