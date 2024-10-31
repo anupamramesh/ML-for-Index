@@ -5,21 +5,31 @@ import numpy as np
 import pandas_ta as ta
 from statsmodels.tsa.stattools import adfuller
 import plotly.graph_objs as go
-from plotly.subplots import make_subplots
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 import streamlit as st
+import seaborn as sns
+import matplotlib.pyplot as plt
 
-def stationary(series):
-    result = adfuller(series)
-    return 'stationary' if result[1] < 0.05 else 'not stationary'
+# Set Streamlit page configuration
+st.set_page_config(layout="wide")
 
+# Title for the Streamlit app
+st.title("Random Forest ML model for Index Prediction")
 
+# Dropdown menu for ticker selection
+ticker_options = {
+    "NIFTY": "^NSEI",
+    "BANKNIFTY": "^NSEBANK",
+    "FINNIFTY": "^NSEFIN",
+    "MIDCTNIFTY": "^NSEMID"
+}
+selected_ticker = st.selectbox("Select Ticker:", list(ticker_options.keys()))
+ticker = ticker_options[selected_ticker]
 
 # Data fetching and preprocessing
 end_date = datetime.now()
 start_date = end_date - timedelta(days=1*365)
-ticker = "^NSEI"
 
 stock = yf.Ticker(ticker)
 historical_data = stock.history(start=start_date.strftime("%Y-%m-%d"), end=end_date.strftime("%Y-%m-%d"), interval='1d')
@@ -32,15 +42,20 @@ historical_data['adx'] = ta.adx(historical_data['High'], historical_data['Low'],
 historical_data['sma'] = historical_data['Close'].rolling(window=14).mean()
 historical_data['corr'] = historical_data['Close'].rolling(window=14).corr(historical_data['sma'])
 historical_data['pct_change'] = historical_data['Close'].pct_change()
-historical_data['volatility'] = historical_data.rolling(14, min_periods=14)['pct_change'].std()*100
+historical_data['volatility'] = historical_data['pct_change'].rolling(14).std() * 100
 
 # Clean data
 historical_data.fillna(method='ffill', inplace=True)
 historical_data.dropna(inplace=True)
 
+# Define stationary function for feature engineering
+def stationary(series):
+    result = adfuller(series.dropna())  # Drop NaNs for the test
+    return 'stationary' if result[1] < 0.05 else 'not stationary'
+
 # Prepare features
 y = historical_data[['signal']].copy()
-X = historical_data[['Open','High','Low','Close','pct_change', 'rsi', 'adx', 'sma','corr', 'volatility']].copy()
+X = historical_data[['Open', 'High', 'Low', 'Close', 'pct_change', 'rsi', 'adx', 'sma', 'corr', 'volatility']].copy()
 
 # Drop non-stationary features
 for col in X.columns:
@@ -54,18 +69,16 @@ rf_model.fit(X_train, y_train['signal'])
 
 # Make predictions
 y_pred = rf_model.predict(X_test)
-accuracy_data = (y_pred == y_test['signal'])
+accuracy_data = (y_pred == y_test['signal'].values)
 accuracy_percentage = round(100 * accuracy_data.sum() / len(accuracy_data), 2)
 
 # Create masks for plotting
-green_mask = (y_test['signal'] == 1) & (y_pred == 1)
-red_mask = (y_test['signal'] == 0) & (y_pred == 1)
+green_mask = (y_test['signal'].values == 1) & (y_pred == 1)
+red_mask = (y_test['signal'].values == 0) & (y_pred == 1)
 
-# Create figure
-# Create figure with adjusted dimensions
-fig = make_subplots(rows=2, cols=1, 
-                    row_heights=[0.90, 0.10],  # Adjusted ratio
-                    vertical_spacing=0.20)      # Increased spacing
+# Plotting Charts
+fig = go.Figure()
+
 # Add main price line
 fig.add_trace(
     go.Scatter(
@@ -74,8 +87,7 @@ fig.add_trace(
         mode='lines',
         name='Close Price',
         line=dict(color='blue', width=2)
-    ),
-    row=1, col=1
+    )
 )
 
 # Add correct predictions
@@ -85,9 +97,8 @@ fig.add_trace(
         y=historical_data.loc[y_test.index[green_mask], 'Close'],
         mode='markers',
         name='Correct Prediction (Buy Signal)',
-        marker=dict(symbol='circle', color='green', size=10, line=dict(width=2, color='darkgreen'))
-    ),
-    row=1, col=1
+        marker=dict(symbol='circle', color='green', size=8, line=dict(width=1.5, color='darkgreen'))
+    )
 )
 
 # Add false predictions
@@ -97,102 +108,101 @@ fig.add_trace(
         y=historical_data.loc[y_test.index[red_mask], 'Close'],
         mode='markers',
         name='False Prediction (Buy Signal)',
-        marker=dict(symbol='circle', color='red', size=10, line=dict(width=2, color='darkred'))
-    ),
-    row=1, col=1
+        marker=dict(symbol='circle', color='red', size=8, line=dict(width=1.5, color='darkred'))
+    )
 )
 
-# Add accuracy text
-accuracy_text = f"Model Accuracy: {accuracy_percentage}%"
-fig.add_trace(
-    go.Scatter(
-        x=[historical_data.index[len(historical_data)//2]],
-        y=[0.5],
-        mode='text',
-        text=[accuracy_text],
-        textfont=dict(size=16, color='black'),
-        showlegend=False,
-    ),
-    row=2, col=1
-)
-
-# Update layout with new dimensions and centering
+# Update layout with better proportions and accuracy text below Date
 fig.update_layout(
+    height=700,
     title={
         'text': "Close Price with Correct and Incorrect Buy Predictions",
         'y': 0.95,
         'x': 0.5,
         'xanchor': 'center',
-        'yanchor': 'top'
-    },
-    xaxis_title='Date',
-    yaxis_title='Close Price',
-    legend_title='Legend',
-    legend={
-        'x': 0.5,
-        'y': 1.15,
-        'xanchor': 'center',
         'yanchor': 'top',
-        'orientation': 'h'
+        'font': dict(size=24)
     },
-    hovermode='x unified',
-    width=1000,          # Increased width
-    height=700,          # Adjusted height
+    xaxis=dict(
+        title='Date',
+        showgrid=True,
+        gridcolor='rgba(128, 128, 128, 0.2)',
+        range=[historical_data.index.min(), historical_data.index.max()],
+        domain=[0.05, 0.95]
+    ),
+    yaxis=dict(
+        title='Close Price',
+        showgrid=True,
+        gridcolor='rgba(128, 128, 128, 0.2)',
+        tickformat=',.0f',
+        range=[historical_data['Close'].min() * 0.99, historical_data['Close'].max() * 1.01]
+    ),
+    legend=dict(
+        x=0.5,
+        y=1.12,
+        xanchor='center',
+        yanchor='top',
+        orientation='h'
+    ),
+    annotations=[
+        dict(
+            text=f"Model Accuracy: {accuracy_percentage}%",
+            xref='paper',
+            yref='paper',
+            x=0.5,
+            y=-0.20,
+            showarrow=False,
+            font=dict(size=24, color='black')
+        )
+    ],
     margin=dict(
-        t=150,           # Top margin
-        l=50,            # Left margin
-        r=50,            # Right margin
-        b=100            # Increased bottom margin
+        t=120,
+        l=50,
+        r=50,
+        b=100
     ),
     plot_bgcolor='rgba(240, 240, 240, 0.5)',
-    showlegend=True
+    showlegend=True,
+    hovermode='x unified'
 )
 
-# Center the main chart
-fig.update_xaxes(
-    showgrid=True,
-    gridcolor='rgba(128, 128, 128, 0.2)',
-    range=[pd.to_datetime('2024-08-01'), pd.to_datetime('2024-10-31')],
-    row=1, col=1,
-    domain=[0.1, 0.9]    # Centers the chart horizontally
-)
+# Display plots in Streamlit with full width
+st.plotly_chart(fig, use_container_width=True)
 
-fig.update_yaxes(
-    showgrid=True,
-    gridcolor='rgba(128, 128, 128, 0.2)',
-    tickformat=',.0f',
-    row=1, col=1,
-    range=[historical_data['Close'].min() * 0.98, historical_data['Close'].max() * 1.02]  # Add padding to y-axis
-)
+# Create a centered container for the heatmap
+st.markdown("<h3 style='text-align: center;'>Feature Correlation Heatmap</h3>", unsafe_allow_html=True)
 
-# Hide axes for accuracy text and position it better
-fig.update_xaxes(visible=False, row=2, col=1)
-fig.update_yaxes(visible=False, row=2, col=1)
+# Create three columns to center the heatmap
+col1, col2, col3 = st.columns([1,2,1])
 
-# Update accuracy text position
-accuracy_text = f"Model Accuracy: {accuracy_percentage}%"
-fig.add_trace(
-    go.Scatter(
-        x=[historical_data.index[len(historical_data)//2]],
-        y=[0.5],
-        mode='text',
-        text=[accuracy_text],
-        textfont=dict(size=16, color='black'),
-        showlegend=False,
-    ),
-    row=2, col=1
-)
+with col2:
+    # Create correlation heatmap with adjusted size and style
+    fig_corr, ax = plt.subplots(figsize=(10, 8))
+    sns.heatmap(X.corr(), 
+                annot=True, 
+                cmap='coolwarm', 
+                ax=ax,
+                fmt='.2f',
+                square=True,
+                cbar_kws={'shrink': .8})
+    
+    # Rotate x-axis labels for better readability
+    plt.xticks(rotation=45, ha='right')
+    plt.yticks(rotation=0)
+    
+    # Adjust layout to prevent label cutoff
+    plt.tight_layout()
+    
+    # Display the heatmap in the center column
+    st.pyplot(fig_corr)
 
+# Add footer
 st.markdown(
     """
-    <div style='text-align: center; color: gray; font-size: 16px;'>
-       Developed by Anupam Kabade
+    <div style='text-align: center; color: black; font-size: 24px; padding-top: 20px;'>
+       Developed by Anupam Kabade, +91 9008816799
     </div>
     """,
     unsafe_allow_html=True
-    )
-
-
-# Streamlit display
-st.title("Buy Signal for Index by ML")
-st.plotly_chart(fig, use_container_width=True)  # Makes chart responsive to container width
+)
+6
